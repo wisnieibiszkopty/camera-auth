@@ -1,3 +1,9 @@
-#include <Arduino.h>
+#ifndef GLOBALS_H
+#define GLOBALS_H
 
-#define WAKEUP_GPIO GPIO_NUM_15
+extern const gpio_num_t WAKEUP_GPIO;
+
+extern const int TRIG_PIN;
+extern const int ECHO_PIN;
+
+#endif

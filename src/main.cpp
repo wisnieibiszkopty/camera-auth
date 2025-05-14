@@ -2,7 +2,7 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 
-#include "led.h"
+#include "distanceSensor.h"
 
 #include "structs.h"
 #include "globals.h"
@@ -22,6 +22,20 @@ void connectToWifi(){
   Serial.println("Connected to WiFi!");
 }
 
+void handleWakeup(){
+  auto sensor = DistanceSensor();
+
+  int count = 5;
+  float results[count];
+
+  sensor.measure(results, count, 500);
+
+  for (int i = 0; i < 5; i++) {
+    Serial.println(results[i]);
+  }
+
+}
+
 void setup() {
   Serial.begin(115200);
 
@@ -31,7 +45,8 @@ void setup() {
 
   if(cause == ESP_SLEEP_WAKEUP_EXT0){
     Serial.println("Obudziles bestie!!!!");
-    //connectToWifi();
+    // connectToWifi();
+    handleWakeup();
   } else {
     Serial.println("doesn't work");
   }
