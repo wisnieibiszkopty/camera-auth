@@ -2,14 +2,21 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 
+#include "cameraAuth.h"
 #include "distanceSensor.h"
 
 #include "structs.h"
 #include "globals.h"
 #include "secrets.h"
 
+#define PIN_RED    5 
+#define PIN_GREEN  18 
+#define PIN_BLUE   19
+
 const char* ssid = "Forsen";
 const char* password = "forsenforsen";
+
+//int color = 0;
 
 void connectToWifi(){
   WiFi.begin(ssid, password);
@@ -22,7 +29,13 @@ void connectToWifi(){
   Serial.println("Connected to WiFi!");
 }
 
-void handleWakeup(){
+void setColor(int R, int G, int B) {
+  analogWrite(PIN_RED,   R);
+  analogWrite(PIN_GREEN, G);
+  analogWrite(PIN_BLUE,  B);
+}
+
+void useDistanceSensor(){
   auto sensor = DistanceSensor();
 
   int count = 5;
@@ -32,6 +45,17 @@ void handleWakeup(){
 
   for (int i = 0; i < 5; i++) {
     Serial.println(results[i]);
+  }
+}
+
+void handleWakeup(){
+  bool access = requestAccess();
+
+  if(access){
+    Serial.println("Access granted!");
+    //useDistanceSensor();
+  } else {
+    Serial.println("Acess denied");
   }
 
 }
@@ -45,7 +69,7 @@ void setup() {
 
   if(cause == ESP_SLEEP_WAKEUP_EXT0){
     Serial.println("Obudziles bestie!!!!");
-    // connectToWifi();
+    connectToWifi();
     handleWakeup();
   } else {
     Serial.println("doesn't work");
