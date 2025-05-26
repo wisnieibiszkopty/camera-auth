@@ -49,7 +49,7 @@ void useDistanceSensor(){
 }
 
 void handleWakeup(){
-  bool access = requestAccess();
+  bool access = requestAccess(CONFIG_API_URL, CONFIG_CONNECTION_STRING);
 
   if(access){
     Serial.println("Access granted!");
@@ -76,7 +76,7 @@ void setup() {
   }
 
   esp_sleep_enable_ext0_wakeup(WAKEUP_GPIO, 1);
-  pinMode(WAKEUP_GPIO, INPUT_PULLUP);
+  pinMode(WAKEUP_GPIO, INPUT_PULLDOWN);
 
   Serial.println("Going to sleep...");
   delay(500);
