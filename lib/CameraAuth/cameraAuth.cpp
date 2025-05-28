@@ -2,9 +2,10 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
-#include <PubSubClient.h>
+
 #include "esp_camera.h"
 #include "base64.h"
+#include "time.h"
 
 #include "structs.h"
 
@@ -25,10 +26,43 @@
 #define HREF_GPIO_NUM 23
 #define PCLK_GPIO_NUM 22
 
+// todo Refactor as class
+
 void handleError(String message){
     Serial.println(message);
     // set led color to failure
     // play error sound
+}
+
+void setTimezone(String timezone){
+  Serial.printf("Setting Timezone to %s\n",timezone.c_str());
+  setenv("TZ",timezone.c_str(),1);  
+  tzset();
+}
+
+void initTime(String timezone){
+  struct tm timeinfo;
+
+  Serial.println("Setting up time");
+  configTime(0, 0, "pool.ntp.org");   
+  if(!getLocalTime(&timeinfo)){
+    Serial.println("Failed to obtain time");
+    return;
+  }
+  Serial.println("Got the time from NTP");
+  setTimezone(timezone);
+}
+
+String tmToString(const struct tm &t) {
+    char buffer[32];
+    snprintf(buffer, sizeof(buffer), "%04d-%02d-%02d %02d:%02d:%02d",
+             t.tm_year + 1900,
+             t.tm_mon + 1,
+             t.tm_mday,
+             t.tm_hour,
+             t.tm_min,
+             t.tm_sec);
+    return String(buffer);
 }
 
 camera_config_t getCameraConfig(){
@@ -54,76 +88,31 @@ camera_config_t getCameraConfig(){
     config.xclk_freq_hz = 20000000;
     config.pixel_format = PIXFORMAT_JPEG;
     
-    config.frame_size = FRAMESIZE_SVGA; 
-    config.jpeg_quality = 12;
+    config.frame_size = FRAMESIZE_SXGA; 
+    config.jpeg_quality = 6;
     config.fb_count = 1;
 
     return config;
 }
 
-static std::optional<RabbitConfig> getConfig(String apiUrl, String connectionString){
+bool verifyFace(String endpoint, camera_fb_t *fb, DeviceData data){
     HTTPClient http;
-
-    http.begin(apiUrl);
-    http.addHeader("Content-Type", "application/json");
-
-    String json = "{\"ConnectionString\": \"" + String(connectionString) + "\"}";
-
-    int httpResponseCode = http.POST(json);
-
-    if (httpResponseCode > 0) {
-      String response = http.getString();
-      Serial.println(httpResponseCode);
-      Serial.println(response);
-
-      RabbitConfig config;
-      DynamicJsonDocument doc(1024);
-      DeserializationError error = deserializeJson(doc, response);
-
-      if(!error){
-          config.login = doc["Rabbit:Login"] | "";
-          config.password = doc["Rabbit:Password"] | "";
-          config.port = doc["Rabbit:Port"] | "";
-          config.url = doc["Rabbit:Url"] | "";
-
-          Serial.println(config.login);
-          Serial.println(config.password);
-          Serial.println(config.url);
-          Serial.println(config.port);
-
-          return config;
-      }
-
-      return std::nullopt;
-    } else {
-      Serial.print("Http error: ");
-      Serial.println(httpResponseCode);
-      return std::nullopt;
-    }
-
-    return std::nullopt;
-}
-
-void mqttCallback(char* topic, byte* payload, unsigned int length){
-    
-}
-
-bool verifyFace(camera_fb_t *fb, const String& jsonMetadata){
-    String serverUrl = "";
-    HTTPClient http;
-    http.begin(serverUrl);
+    http.begin(endpoint);
 
     String boundary = "----1234567890ABCDEF";
     http.addHeader("Content-Type", "multipart/form-data; boundary=" + boundary);
 
-    // Budujemy body
     String bodyStart = "--" + boundary + "\r\n";
     bodyStart += "Content-Disposition: form-data; name=\"image\"; filename=\"photo.jpg\"\r\n";
     bodyStart += "Content-Type: image/jpeg\r\n\r\n";
 
     String bodyMiddle = "\r\n--" + boundary + "\r\n";
-    bodyMiddle += "Content-Disposition: form-data; name=\"metadata\"\r\n\r\n";
-    bodyMiddle += jsonMetadata + "\r\n";
+    bodyMiddle += "Content-Disposition: form-data; name=\"DeviceId\"\r\n\r\n";
+    bodyMiddle += data.deviceId + "\r\n";
+
+    bodyMiddle += "--" + boundary + "\r\n";
+    bodyMiddle += "Content-Disposition: form-data; name=\"timestamp\"\r\n\r\n";
+    bodyMiddle += data.timestamp + "\r\n";
 
     String bodyEnd = "--" + boundary + "--\r\n";
 
@@ -143,6 +132,9 @@ bool verifyFace(camera_fb_t *fb, const String& jsonMetadata){
     if (httpCode > 0) {
         Serial.printf("HTTP response code: %d\n", httpCode);
         String response = http.getString();
+
+        // TODO if response is success grant access
+
         Serial.println("Response:");
         Serial.println(response);
         http.end();
@@ -154,11 +146,20 @@ bool verifyFace(camera_fb_t *fb, const String& jsonMetadata){
     }
 }
 
-bool requestAccess(String apiUrl, String connectionString){
+bool requestAccess(String endpoint){
     Serial.println("Authorizing...");
+
+    // getting current time
+    // for Poland
+    initTime("CET-1CEST,M3.5.0/2,M10.5.0/3");
+    tm timeinfo;
+    getLocalTime(&timeinfo);
+    String time = tmToString(timeinfo);
+    Serial.println(time);
 
     // set led color to starting
 
+    // cannot send photo to backend without wifi
     if(WiFi.status() != WL_CONNECTED){
         handleError("Wifi isn't connected");
         return false;
@@ -180,84 +181,28 @@ bool requestAccess(String apiUrl, String connectionString){
 
     //String encoded = base64::encode(fb->buf, fb->len);
     //Serial.println("Base64 encoded image:");
-    // Serial.println(encoded);
+    //Serial.println(encoded);
 
-    String jsonMetadata = "{";
-        jsonMetadata += "\"DeviceId\":\"esp32-cam-001\",";
-        jsonMetadata += "\"timestamp\":" + String(123456789);
-        jsonMetadata += "}";
+    DeviceData data = DeviceData();
+    data.deviceId = ESP.getEfuseMac();
+    data.timestamp = mktime(&timeinfo);
 
-    verifyFace(fb, jsonMetadata);
+    boolean authorized = verifyFace(endpoint, fb, data);
+
     esp_camera_fb_return(fb);
-
-    // get config
-    // auto rabbitConfig = getConfig(apiUrl, connectionString);
-
-    // if(!rabbitConfig.has_value()){
-    //     handleError("Cannot get configuration");
-    //     return false;
-    // }
-
-    // auto config = rabbitConfig.value();
-
-    // WiFiClient espClient;
-    // PubSubClient mqttClient(espClient);
-    
-    // // connect to rabbit -> maybe add led color for processing error
-    // // I need uint
-
-    // mqttClient.setServer(config.url.c_str(), (uint16_t) config.port.toInt());
-    // mqttClient.setCallback(mqttCallback);
-
-    // bool connected = mqttClient.connect("ClientID", config.login.c_str(), config.password.c_str());
-
-    // if(!connected){
-    //     Serial.println("Not connected to mqtt");
-    //     return false;
-    // }
-
-    // Serial.println("connected to mqtt");
-
-    // DynamicJsonDocument doc(64 * 1024);
-
-    // doc["deviceId"] = WiFi.macAddress();
-
-    // // replace with ntp server 
-    // doc["timestamp"] = esp_timer_get_time();
-
-    // // Forsen
-    // // image is to big to be send via mqtt 💀
-    // String image = "/9j/4AAQSkZJRgABAQEAAAAAAAD/";
-    // doc["base64"] = image;
-
-    // // todo make json from 
-    // String json;
-    // serializeJson(doc, json);
-
-    // Serial.println(json);
-
-    // mqttClient.publish("verify/face", json.c_str());
-
-    // mqttClient.disconnect();
-
     WiFi.disconnect();
 
-    // set led color to processing
-    // take picture
-    // convert to base64
-    // add additional info to json
-    // send to server
-    // wait for response
-
-    // if face is authorized
+    if(authorized){
+        // if face is authorized
         // play succes sound
         // set led color to allowed
         // return true
-
-    // if face is unauthorized
+        return true;
+    } else {
+        // if face is unauthorized
         // play failure sound
         // set led color to denied
         // return false
-
-    return true;
+        return false;
+    }
 }

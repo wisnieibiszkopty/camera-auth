@@ -9,14 +9,8 @@
 #include "globals.h"
 #include "secrets.h"
 
-#define PIN_RED    5 
-#define PIN_GREEN  18 
-#define PIN_BLUE   19
-
 const char* ssid = "Forsen";
 const char* password = "forsenforsen";
-
-//int color = 0;
 
 void connectToWifi(){
   WiFi.begin(ssid, password);
@@ -27,12 +21,6 @@ void connectToWifi(){
   }
 
   Serial.println("Connected to WiFi!");
-}
-
-void setColor(int R, int G, int B) {
-  analogWrite(PIN_RED,   R);
-  analogWrite(PIN_GREEN, G);
-  analogWrite(PIN_BLUE,  B);
 }
 
 void useDistanceSensor(){
@@ -49,7 +37,7 @@ void useDistanceSensor(){
 }
 
 void handleWakeup(){
-  bool access = requestAccess(CONFIG_API_URL, CONFIG_CONNECTION_STRING);
+  bool access = requestAccess(ENDPOINT);
 
   if(access){
     Serial.println("Access granted!");
@@ -65,22 +53,29 @@ void setup() {
 
   delay(1000);
 
-  esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+  Serial.println("Obudziles bestie!!!!");
+  connectToWifi();
+  handleWakeup();
 
-  if(cause == ESP_SLEEP_WAKEUP_EXT0){
-    Serial.println("Obudziles bestie!!!!");
-    connectToWifi();
-    handleWakeup();
-  } else {
-    Serial.println("doesn't work");
-  }
+  // esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
 
-  esp_sleep_enable_ext0_wakeup(WAKEUP_GPIO, 1);
-  pinMode(WAKEUP_GPIO, INPUT_PULLDOWN);
+  // if(cause == ESP_SLEEP_WAKEUP_EXT0){
+  //   Serial.println("Obudziles bestie!!!!");
+  //   connectToWifi();
+  //   handleWakeup();
+  // } else {
+  //   Serial.println("doesn't work");
+  // }
 
-  Serial.println("Going to sleep...");
-  delay(500);
-  esp_deep_sleep_start();
+  // //touchAttachInterrupt(TOUCH_WAKEUP_PIN, NULL, TOUCH_THRESHOLD);
+  // //esp_sleep_enable_touchpad_wakeup();
+
+  // esp_sleep_enable_ext0_wakeup(WAKEUP_GPIO, 1);
+  // pinMode(WAKEUP_GPIO, INPUT_PULLUP);
+
+  // Serial.println("Going to sleep...");
+  // delay(500);
+  // esp_deep_sleep_start();
 
 }
 

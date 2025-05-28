@@ -1,3 +1,3 @@
 #pragma once
 
-bool requestAccess(String apiUrl, String connectionString);
+bool requestAccess(String endpoint);
