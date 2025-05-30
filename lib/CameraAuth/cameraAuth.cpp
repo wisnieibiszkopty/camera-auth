@@ -1,46 +1,25 @@
-#include <Arduino.h>
-#include <ArduinoJson.h>
-#include <WiFi.h>
-#include <HTTPClient.h>
+#include "cameraAuth.h"
 
-#include "esp_camera.h"
-#include "base64.h"
-#include "time.h"
+FaceAuthSystem::FaceAuthSystem(const String &endpoint, const String &timezone){
+    this->endpoint = endpoint;
+    this->cameraConfig = getCameraConfig();
+    this->deviceId = ESP.getEfuseMac();
+    initTime(timezone);
+}
 
-#include "structs.h"
-
-#define PWDN_GPIO_NUM -1
-#define RESET_GPIO_NUM -1
-#define XCLK_GPIO_NUM 21
-#define SIOD_GPIO_NUM 26
-#define SIOC_GPIO_NUM 27
-#define Y9_GPIO_NUM 35
-#define Y8_GPIO_NUM 34
-#define Y7_GPIO_NUM 39
-#define Y6_GPIO_NUM 36
-#define Y5_GPIO_NUM 19
-#define Y4_GPIO_NUM 18
-#define Y3_GPIO_NUM 5
-#define Y2_GPIO_NUM 4
-#define VSYNC_GPIO_NUM 25
-#define HREF_GPIO_NUM 23
-#define PCLK_GPIO_NUM 22
-
-// todo Refactor as class
-
-void handleError(String message){
+void FaceAuthSystem::handleError(const String &message){
     Serial.println(message);
     // set led color to failure
     // play error sound
 }
 
-void setTimezone(String timezone){
+void FaceAuthSystem::setTimezone(const String &timezone){
   Serial.printf("Setting Timezone to %s\n",timezone.c_str());
   setenv("TZ",timezone.c_str(),1);  
   tzset();
 }
 
-void initTime(String timezone){
+void FaceAuthSystem::initTime(const String &timezone){
   struct tm timeinfo;
 
   Serial.println("Setting up time");
@@ -53,7 +32,7 @@ void initTime(String timezone){
   setTimezone(timezone);
 }
 
-String tmToString(const struct tm &t) {
+String FaceAuthSystem::tmToString(const struct tm &t) {
     char buffer[32];
     snprintf(buffer, sizeof(buffer), "%04d-%02d-%02d %02d:%02d:%02d",
              t.tm_year + 1900,
@@ -65,7 +44,7 @@ String tmToString(const struct tm &t) {
     return String(buffer);
 }
 
-camera_config_t getCameraConfig(){
+camera_config_t FaceAuthSystem::getCameraConfig(){
     camera_config_t config;
     config.ledc_channel = LEDC_CHANNEL_0;
     config.ledc_timer = LEDC_TIMER_0;
@@ -95,9 +74,9 @@ camera_config_t getCameraConfig(){
     return config;
 }
 
-bool verifyFace(String endpoint, camera_fb_t *fb, DeviceData data){
+bool FaceAuthSystem::verifyFace(camera_fb_t *fb, const DeviceData &data){
     HTTPClient http;
-    http.begin(endpoint);
+    http.begin(this->endpoint);
 
     String boundary = "----1234567890ABCDEF";
     http.addHeader("Content-Type", "multipart/form-data; boundary=" + boundary);
@@ -146,17 +125,16 @@ bool verifyFace(String endpoint, camera_fb_t *fb, DeviceData data){
     }
 }
 
-bool requestAccess(String endpoint){
+bool FaceAuthSystem::requestAccess(){
     Serial.println("Authorizing...");
 
     // getting current time
     // for Poland
-    initTime("CET-1CEST,M3.5.0/2,M10.5.0/3");
     tm timeinfo;
     getLocalTime(&timeinfo);
+    
     String time = tmToString(timeinfo);
     Serial.println(time);
-
     // set led color to starting
 
     // cannot send photo to backend without wifi
@@ -165,10 +143,11 @@ bool requestAccess(String endpoint){
         return false;
     }
 
-    // taking photo with camera
-    camera_config_t cameraConfig = getCameraConfig();
+    Serial.println("Initializng camera");
 
-    if (esp_camera_init(&cameraConfig)) {
+    // taking photo with camera
+
+    if (esp_camera_init(&this->cameraConfig)) {
         Serial.println("Camera init failed");
         return false;
     } 
@@ -179,18 +158,21 @@ bool requestAccess(String endpoint){
         return false;
     }
 
+    Serial.println("Photo captured");
+
     //String encoded = base64::encode(fb->buf, fb->len);
     //Serial.println("Base64 encoded image:");
     //Serial.println(encoded);
 
     DeviceData data = DeviceData();
-    data.deviceId = ESP.getEfuseMac();
+    data.deviceId = this->deviceId;
     data.timestamp = mktime(&timeinfo);
 
-    boolean authorized = verifyFace(endpoint, fb, data);
+    Serial.println("Sending photo to backend");
+
+    boolean authorized = verifyFace(fb, data);
 
     esp_camera_fb_return(fb);
-    WiFi.disconnect();
 
     if(authorized){
         // if face is authorized
@@ -205,4 +187,10 @@ bool requestAccess(String endpoint){
         // return false
         return false;
     }
+
+    
+}
+
+FaceAuthSystem::~FaceAuthSystem(){
+    esp_camera_deinit();
 }

@@ -5,7 +5,6 @@
 #include "cameraAuth.h"
 #include "distanceSensor.h"
 
-#include "structs.h"
 #include "globals.h"
 #include "secrets.h"
 
@@ -37,7 +36,8 @@ void useDistanceSensor(){
 }
 
 void handleWakeup(){
-  bool access = requestAccess(ENDPOINT);
+  FaceAuthSystem authSystem = FaceAuthSystem(ENDPOINT, "CET-1CEST,M3.5.0/2,M10.5.0/3");
+  bool access = authSystem.requestAccess();
 
   if(access){
     Serial.println("Access granted!");
@@ -46,6 +46,7 @@ void handleWakeup(){
     Serial.println("Acess denied");
   }
 
+  WiFi.disconnect();
 }
 
 void setup() {
